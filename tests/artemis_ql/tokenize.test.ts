@@ -330,5 +330,13 @@ describe('tokenize/1', () => {
         ],
       });
     });
+
+    test('can prematurely closed group', () => {
+      expect(ArtemisQL.tokenize(')')).toStrictEqual({
+        i: 0,
+        i2: 0,
+        value: [],
+      });
+    });
   });
 });

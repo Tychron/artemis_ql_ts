@@ -760,6 +760,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
         i2: i + 1,
         tokens: [token],
       };
+    case 'incomplete:group':
     case 'group':
       return {
         i2: i + 1,
@@ -881,6 +882,7 @@ export default {
   OPERATORS,
   tokenize,
   parse,
+  parseTokens,
   decodeTokens,
   decodeToken,
 };

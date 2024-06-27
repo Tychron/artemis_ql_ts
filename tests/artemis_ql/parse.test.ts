@@ -183,7 +183,7 @@ describe('parse/1', () => {
   });
 
   describe('group', () => {
-    test('can handle empty groups', () => {
+    test('can handle empty group', () => {
       expect(ArtemisQL.parse('()')).toStrictEqual([
         {
           index: 0,
@@ -191,6 +191,40 @@ describe('parse/1', () => {
           value: [],
         },
       ]);
+    });
+
+    test('can handle multiple groups', () => {
+      expect(ArtemisQL.parse('()()()')).toStrictEqual([
+        {
+          index: 0,
+          type: 'group',
+          value: [],
+        },
+        {
+          index: 2,
+          type: 'group',
+          value: [],
+        },
+        {
+          index: 4,
+          type: 'group',
+          value: [],
+        },
+      ]);
+    });
+
+    test('can handle incomplete group', () => {
+      expect(ArtemisQL.parse('(')).toStrictEqual([
+        {
+          index: 0,
+          type: 'incomplete:group',
+          value: [],
+        },
+      ]);
+    });
+
+    test('can handle prematurely closed group', () => {
+      expect(ArtemisQL.parse(')')).toStrictEqual([]);
     });
   });
 });
