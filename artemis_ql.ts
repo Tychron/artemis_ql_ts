@@ -93,6 +93,17 @@ export const NEWLINE_CHARS: CharTable = {
   0x2029: true,
 };
 
+export const OPERATORS = {
+  gte: '>=',
+  lte: '<=',
+  gt: '>',
+  lt: '<',
+  eq: '=',
+  neq: '!',
+  fuzz: '~',
+  nfuzz: '!~',
+};
+
 export function isSpaceLikeChar(code: number): boolean {
   return !!SPACE_CHARS[code];
 }
@@ -350,15 +361,13 @@ export function tokenize(str: string, i: number = 0) {
         value,
       } = tokenize(str, i2 + 1);
 
+      c = str.charCodeAt(i3);
+      const isClosed = c === CHAR_TABLE[')'];
       result.push({
-        type: 'group',
-        index: i3,
+        type: isClosed ? 'group' : 'incomplete:group',
+        index: i2,
         value,
       });
-      c = str.charCodeAt(i3);
-      if (c !== CHAR_TABLE[')']) {
-        throw new Error('unterminated group');
-      }
       i2 = i3 + 1;
     } else if (c === CHAR_TABLE[')']) {
       break;
@@ -857,7 +866,7 @@ export function decodeTokens(tokens: Token[]) {
   return result;
 }
 
-export default function parse(str: string): Token[] {
+export function parse(str: string): Token[] {
   const {
     value,
   } = tokenize(str);
@@ -867,3 +876,11 @@ export default function parse(str: string): Token[] {
 
   return tokens;
 }
+
+export default {
+  OPERATORS,
+  tokenize,
+  parse,
+  decodeTokens,
+  decodeToken,
+};

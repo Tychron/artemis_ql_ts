@@ -1,0 +1,28 @@
+{
+  "name": "artemis_ql_ts",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tychron/artemis_ql_ts.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Tychron/artemis_ql_ts/issues"
+  },
+  "homepage": "https://github.com/Tychron/artemis_ql_ts#readme",
+  "description": "",
+  "devDependencies": {
+    "@babel/core": "^7.24.7",
+    "@babel/preset-env": "^7.24.7",
+    "@babel/preset-typescript": "^7.24.7",
+    "@types/jest": "^29.5.12",
+    "babel-jest": "^29.7.0",
+    "jest": "^29.7.0",
+    "typescript": "^5.5.2"
+  }
+}
