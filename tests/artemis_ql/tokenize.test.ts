@@ -278,6 +278,65 @@ describe('tokenize/1', () => {
     }
   });
 
+  describe('list', () => {
+    test('can handle an empty list', () => {
+      expect(ArtemisQL.tokenize(',')).toStrictEqual({
+        i: 0,
+        i2: 1,
+        value: [
+          {
+            index: 0,
+            type: 'continuation_op',
+            value: true,
+          },
+        ],
+      });
+    });
+
+    test('can handle a single element list', () => {
+      expect(ArtemisQL.tokenize(',b')).toStrictEqual({
+        i: 0,
+        i2: 2,
+        value: [
+          {
+            index: 0,
+            type: 'continuation_op',
+            value: true,
+          },
+          {
+            index: 1,
+            type: 'word',
+            value: 'b',
+          },
+        ],
+      });
+    });
+
+    test('can handle a list of 2 elements', () => {
+      expect(ArtemisQL.tokenize('a,b')).toStrictEqual({
+        i: 0,
+        i2: 3,
+        value: [
+          {
+            index: 0,
+            type: 'word',
+            value: 'a',
+          },
+          {
+            index: 1,
+            type: 'continuation_op',
+            value: true,
+          },
+          {
+            index: 2,
+            type: 'word',
+            value: 'b',
+          },
+        ],
+      });
+    });
+  });
+
   describe('group', () => {
     test('can handle empty group', () => {
       expect(ArtemisQL.tokenize('()')).toStrictEqual({

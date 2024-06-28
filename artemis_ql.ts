@@ -28,7 +28,7 @@ type Token = {
   isError?: boolean,
   type: string,
   index: number,
-  value: number | string | boolean | CmpValue | RangeValue | PairValue | Token[],
+  value: null | number | string | boolean | CmpValue | RangeValue | PairValue | Token[],
 };
 
 function makeInfinityToken(): Token {
@@ -293,7 +293,7 @@ export function tokenize(str: string, i: number = 0) {
       i2 = i3;
     } else if (c === CHAR_TABLE['^']) {
       result.push({
-        type: 'pin',
+        type: 'pin_op',
         index: i2,
         value: true,
       });
@@ -436,25 +436,25 @@ export function parseTokens(tokens: Token[]): Token[] {
   const l = tokens.length;
   let i = 0;
 
-  let token: Token;
-  let token2: Token;
+  let subjectToken: Token;
+  let nextToken: Token;
 
   while (i < l) {
-    token = tokens[i];
-    token2 = tokens[i + 1];
-    switch (token.type) {
-      case 'pin':
-        if (token2) {
-          if (token2.type === 'word' || token2.type === 'quoted_string') {
+    subjectToken = tokens[i];
+    nextToken = tokens[i + 1];
+    switch (subjectToken.type) {
+      case 'pin_op':
+        if (nextToken) {
+          if (nextToken.type === 'word' || nextToken.type === 'quoted_string') {
             result.push({
-              ...token,
+              ...subjectToken,
               type: 'pin',
-              value: [token2],
+              value: [nextToken],
             });
             i += 2;
           } else {
             result.push({
-              ...token,
+              ...subjectToken,
               isError: true,
               type: 'pin',
             });
@@ -462,57 +462,61 @@ export function parseTokens(tokens: Token[]): Token[] {
           }
         } else {
           result.push({
-            ...token,
+            ...subjectToken,
             type: 'incomplete:pin',
           });
           i += 1;
         }
         break;
       case 'word':
-        switch ((token.value as string).toUpperCase()) {
+        switch ((subjectToken.value as string).toUpperCase()) {
           case 'AND':
             result.push({
-              ...token,
+              ...subjectToken,
               type: 'and',
+              value: true,
             });
             i += 1;
             break;
           case 'OR':
             result.push({
-              ...token,
+              ...subjectToken,
               type: 'or',
+              value: true,
             });
             i += 1;
             break;
           case 'NOT':
             result.push({
-              ...token,
+              ...subjectToken,
               type: 'not',
+              value: true,
             });
             i += 1;
             break;
           case 'NULL':
             result.push({
-              ...token,
+              ...subjectToken,
               type: 'null',
+              value: null,
             });
             i += 1;
             break;
           default:
-            result.push(token);
+            result.push(subjectToken);
             i += 1;
             break;
         }
         break;
       case 'group':
         result.push({
-          ...token,
-          value: parseTokens(token.value as Token[]),
+          ...subjectToken,
+          value: parseTokens(subjectToken.value as Token[]),
         });
         i += 1;
         break;
       default:
-        result.push(token);
+        result.push(subjectToken);
         i += 1;
         break;
     }
@@ -533,36 +537,37 @@ export function decodeTokenAsValue(tokens: Token[], i: number) {
   const l = tokens.length;
   let i2 = i;
 
-  let token: Token;
-  let done: boolean = false;
+  let subjectToken: Token;
+  let noMoreValues: boolean = false;
   while (i2 < l) {
-    token = tokens[i2];
-    switch (token.type) {
+    subjectToken = tokens[i2];
+    switch (subjectToken.type) {
       case 'word':
       case 'quoted_string':
+      case 'null':
       case 'range':
       case 'cmp':
       case 'pin':
-      case 'null':
       case 'wildcard':
       case 'any_char':
-        acc.push(token);
+        acc.push(subjectToken);
+        i2 += 1;
         break;
       case 'group': {
         const {
           tokens: newTokens,
         // eslint-disable-next-line
-        } = decodeToken([token], 0);
+        } = decodeToken([subjectToken], 0);
         newTokens.forEach((newToken) => {
           acc.push(newToken);
         });
+        i2 += 1;
       } break;
       default:
-        done = true;
+        noMoreValues = true;
         break;
     }
-    i2 += 1;
-    if (done) {
+    if (noMoreValues) {
       break;
     }
   }
@@ -591,6 +596,7 @@ export function decodeTokensAsValueList(tokens: Token[], i: number) {
   let i2 = i;
   let token: Token;
 
+  let x = 0;
   while (i2 < l) {
     const {
       i2: i3,
@@ -600,20 +606,22 @@ export function decodeTokensAsValueList(tokens: Token[], i: number) {
 
     if (valueTokens.length > 0) {
       result.push(valueTokens[0]);
-      token = tokens[i2];
+    }
+    token = tokens[i2];
 
-      if (token && token.type !== 'space') {
-        if (token.type === 'continuation_op') {
-          // keep going!
-          i2 += 1;
-        } else {
-          throw new Error(`list must be terminated by space or eos (got ${token.type})`);
-        }
-      } else {
-        break;
-      }
-    } else {
+    if (!token) {
       break;
+    }
+
+    if (token.type === 'space') {
+      break;
+    }
+
+    if (token.type === 'continuation_op') {
+      // keep going!
+      i2 += 1;
+    } else {
+      throw new Error(`list must be terminated by space or eos (got ${token.type})`);
     }
   }
 
@@ -662,7 +670,13 @@ function decodeTokenPair(key: Token, tokens: Token[], i: number) {
   };
 }
 
-function decodeTokenOther(tokens: Token[], i: number) {
+interface DecodeTokenOtherResult {
+  i2: number;
+  isLast: boolean;
+  tokens: Token[];
+};
+
+function decodeTokenOther(tokens: Token[], i: number): DecodeTokenOtherResult {
   const {
     i2: i3,
     tokens: valueTokens,
@@ -670,6 +684,7 @@ function decodeTokenOther(tokens: Token[], i: number) {
 
   if (valueTokens.length < 1) {
     return {
+      isLast: false,
       i2: i3,
       tokens: [],
     };
@@ -696,6 +711,7 @@ function decodeTokenOther(tokens: Token[], i: number) {
           e = rightValueTokens[0];
         }
         return {
+          isLast: false,
           i2,
           tokens: [
             {
@@ -713,9 +729,10 @@ function decodeTokenOther(tokens: Token[], i: number) {
         const {
           i2: i4,
           tokens: listTokens,
-        } = decodeTokensAsValueList(tokens, i2);
+        } = decodeTokensAsValueList(tokens, i);
         i2 = i4;
         return {
+          isLast: false,
           i2,
           tokens: [
             {
@@ -728,12 +745,14 @@ function decodeTokenOther(tokens: Token[], i: number) {
       }
       default:
         return {
+          isLast: false,
           i2,
           tokens: valueTokens,
         };
     }
   } else {
     return {
+      isLast: true,
       i2,
       tokens: valueTokens,
     };
@@ -741,37 +760,41 @@ function decodeTokenOther(tokens: Token[], i: number) {
 }
 
 export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
-  const token = tokens[i];
-  const token2 = tokens[i + 1];
+  const subjectToken = tokens[i];
+  const nextToken = tokens[i + 1];
 
-  if (!token) {
+  if (!subjectToken) {
     return {
       i2: i,
       tokens: [],
     };
   }
 
-  switch (token.type) {
+  switch (subjectToken.type) {
     case 'or':
     case 'and':
     case 'not':
-    case 'null':
       return {
         i2: i + 1,
-        tokens: [token],
+        tokens: [subjectToken],
       };
     case 'incomplete:group':
-    case 'group':
+    case 'group': {
+      const {
+        value: decodedTokens,
+      } = decodeTokens(subjectToken.value as Token[]);
+
       return {
         i2: i + 1,
         tokens: [
           {
-            ...token,
+            ...subjectToken,
             // eslint-disable-next-line
-            value: decodeTokens(token.value as Token[]),
+            value: decodedTokens,
           },
         ],
       };
+    }
     case 'cmp_op': {
       const {
         i2,
@@ -783,9 +806,9 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
         tokens: [
           {
             type: 'cmp',
-            index: token.index,
+            index: subjectToken.index,
             value: {
-              op: token.value,
+              op: subjectToken.value,
               value: valueTokens[0],
             } as CmpValue,
           },
@@ -793,7 +816,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
       };
     }
     case 'range_op': {
-      if (token2 && token2.type !== 'space') {
+      if (nextToken && nextToken.type !== 'space') {
         const {
           i2,
           tokens: valueTokens,
@@ -804,7 +827,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
           tokens: [
             {
               type: 'range',
-              index: token.index,
+              index: subjectToken.index,
               value: {
                 s: makeInfinityToken(),
                 e: valueTokens[0],
@@ -820,7 +843,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
         tokens: [
           {
             type: 'range',
-            index: token.index,
+            index: subjectToken.index,
             value: {
               s: makeInfinityToken(),
               e: makeInfinityToken(),
@@ -831,10 +854,27 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
     }
     case 'quoted_string':
     case 'word':
-      if (token2 && token2.type === 'pair_op') {
-        return decodeTokenPair(token, tokens, i + 2);
+      if (nextToken && nextToken.type === 'pair_op') {
+        return decodeTokenPair(subjectToken, tokens, i + 2);
       }
       return decodeTokenOther(tokens, i);
+    case 'continuation_op': {
+      const {
+        i2,
+        tokens: listTokens,
+      } = decodeTokensAsValueList(tokens, i);
+
+      return {
+        i2,
+        tokens: [
+          {
+            index: subjectToken.index,
+            type: 'list',
+            value: listTokens,
+          },
+        ],
+      };
+    }
     default: {
       return decodeTokenOther(tokens, i);
     }
@@ -844,45 +884,62 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
 export function decodeTokens(tokens: Token[]) {
   const result: Token[] = [];
   const l = tokens.length;
-  let i = 0;
+  let i2 = 0;
 
-  let token: Token;
-  while (i < l) {
-    token = tokens[i];
+  let subjectToken: Token;
+  while (i2 < l) {
+    subjectToken = tokens[i2];
 
-    if (token.type === 'space') {
-      i += 1;
+    if (subjectToken.type === 'space') {
+      i2 += 1;
     } else {
       const {
-        i2,
+        i2: i3,
         tokens: newTokens,
-      } = decodeToken(tokens, i);
+      } = decodeToken(tokens, i2);
       newTokens.forEach((newToken) => {
         result.push(newToken);
       });
-      i = i2;
+      i2 = i3;
     }
   }
 
-  return result;
+  return {
+    i2,
+    value: result
+  };
 }
 
-export function parse(str: string): Token[] {
+export function parse(str: string) {
   const {
+    i,
+    i2,
     value,
   } = tokenize(str);
 
-  let tokens = parseTokens(value);
-  tokens = decodeTokens(tokens);
+  const parsedTokens = parseTokens(value);
+  const {
+    i2: decodeI2,
+    value: decodedTokens,
+  } = decodeTokens(parsedTokens);
 
-  return tokens;
+  return {
+    tokenize: {
+      i,
+      i2,
+      value,
+    },
+    decode: {
+      i,
+      i2: decodeI2,
+      value: decodedTokens,
+    },
+    value: decodedTokens,
+  };
 }
 
 export default {
   OPERATORS,
   tokenize,
   parse,
-  parseTokens,
-  decodeTokens,
-  decodeToken,
 };
