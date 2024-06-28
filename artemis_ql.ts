@@ -596,7 +596,6 @@ export function decodeTokensAsValueList(tokens: Token[], i: number) {
   let i2 = i;
   let token: Token;
 
-  let x = 0;
   while (i2 < l) {
     const {
       i2: i3,
@@ -674,7 +673,7 @@ interface DecodeTokenOtherResult {
   i2: number;
   isLast: boolean;
   tokens: Token[];
-};
+}
 
 function decodeTokenOther(tokens: Token[], i: number): DecodeTokenOtherResult {
   const {
@@ -782,6 +781,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
     case 'group': {
       const {
         value: decodedTokens,
+      // eslint-disable-next-line
       } = decodeTokens(subjectToken.value as Token[]);
 
       return {
@@ -789,7 +789,6 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
         tokens: [
           {
             ...subjectToken,
-            // eslint-disable-next-line
             value: decodedTokens,
           },
         ],
@@ -906,7 +905,7 @@ export function decodeTokens(tokens: Token[]) {
 
   return {
     i2,
-    value: result
+    value: result,
   };
 }
 
