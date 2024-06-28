@@ -630,39 +630,29 @@ export function decodeTokensAsValueList(tokens: Token[], i: number) {
   };
 }
 
-function decodeTokenPair(key: Token, tokens: Token[], i: number) {
+function decodeTokenPair(parent: Token, key: Token | null, tokens: Token[], i: number) {
   const {
     i2,
     tokens: valueTokens,
   // eslint-disable-next-line
   } = decodeToken(tokens, i);
 
+  let value = null;
+
   if (valueTokens.length > 0) {
-    const value = valueTokens[0];
-    return {
-      i2,
-      tokens: [
-        {
-          type: 'pair',
-          index: key.index,
-          value: {
-            key,
-            value,
-          } as PairValue,
-        },
-      ],
-    };
+    // eslint-disable-next-line
+    value = valueTokens[0];
   }
 
   return {
     i2,
     tokens: [
       {
-        type: 'incomplete:pair',
-        index: key.index,
+        type: (key && value) ? 'pair' : 'incomplete:pair',
+        index: parent.index,
         value: {
           key,
-          value: null,
+          value,
         } as PairValue,
       },
     ],
@@ -779,6 +769,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
       };
     case 'incomplete:group':
     case 'group': {
+      // Groups and incomplete groups are decoded in the same way, decode all of their children
       const {
         value: decodedTokens,
       // eslint-disable-next-line
@@ -795,6 +786,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
       };
     }
     case 'cmp_op': {
+      // Comparison operators appear before a 'value' token
       const {
         i2,
         tokens: valueTokens,
@@ -854,9 +846,11 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
     case 'quoted_string':
     case 'word':
       if (nextToken && nextToken.type === 'pair_op') {
-        return decodeTokenPair(subjectToken, tokens, i + 2);
+        return decodeTokenPair(subjectToken, subjectToken, tokens, i + 2);
       }
       return decodeTokenOther(tokens, i);
+    case 'pair_op':
+      return decodeTokenPair(subjectToken, null, tokens, i + 1);
     case 'continuation_op': {
       const {
         i2,
@@ -896,10 +890,15 @@ export function decodeTokens(tokens: Token[]) {
         i2: i3,
         tokens: newTokens,
       } = decodeToken(tokens, i2);
-      newTokens.forEach((newToken) => {
-        result.push(newToken);
-      });
-      i2 = i3;
+
+      if (newTokens.length > 0) {
+        newTokens.forEach((newToken) => {
+          result.push(newToken);
+        });
+        i2 = i3;
+      } else {
+        throw new Error(`nothing to decode, but there are still tokens left (next-token: ${subjectToken.type})`);
+      }
     }
   }
 
@@ -917,6 +916,7 @@ export function parse(str: string) {
   } = tokenize(str);
 
   const parsedTokens = parseTokens(value);
+
   const {
     i2: decodeI2,
     value: decodedTokens,

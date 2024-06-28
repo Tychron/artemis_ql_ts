@@ -177,6 +177,23 @@ describe('tokenize/1', () => {
           },
         ],
       });
+
+      expect(ArtemisQL.tokenize(':value')).toStrictEqual({
+        i: 0,
+        i2: 6,
+        value: [
+          {
+            index: 0,
+            type: 'pair_op',
+            value: true,
+          },
+          {
+            index: 1,
+            type: 'word',
+            value: 'value',
+          },
+        ]
+      });
     });
 
     test('can parse mixed pairs', () => {

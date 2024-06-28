@@ -77,7 +77,7 @@ describe('parse/1', () => {
     });
   });
 
-  describe('pairs', () => {
+  describe('pair', () => {
     test('can parse a key-value pair', () => {
       expect(ArtemisQL.parse('key:value')).toMatchObject({
         value: [
@@ -131,6 +131,23 @@ describe('parse/1', () => {
                 value: 'key',
               },
               value: null,
+            },
+          },
+        ],
+      });
+
+      expect(ArtemisQL.parse(':value')).toMatchObject({
+        value: [
+          {
+            index: 0,
+            type: 'incomplete:pair',
+            value: {
+              key: null,
+              value: {
+                index: 1,
+                type: 'word',
+                value: 'value',
+              },
             },
           },
         ],
