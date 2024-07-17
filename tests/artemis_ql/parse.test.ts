@@ -77,6 +77,61 @@ describe('parse/1', () => {
     });
   });
 
+  describe('pin', () => {
+    test('can parse a pinned word', () => {
+      expect(ArtemisQL.parse('^pinned')).toMatchObject({
+        value: [
+          {
+            index: 0,
+            type: "pin",
+            value: [
+              {
+                type: "word",
+                index: 1,
+                value: "pinned",
+              },
+            ],
+          },
+        ],
+      });
+    });
+
+    test('can parse a pinned quoted string', () => {
+      expect(ArtemisQL.parse('^"pinned thing"')).toMatchObject({
+        value: [
+          {
+            index: 0,
+            type: "pin",
+            value: [
+              {
+                type: "quoted_string",
+                index: 1,
+                value: "pinned thing",
+              },
+            ],
+          },
+        ],
+      });
+    });
+
+    test('can handle an invalid pin', () => {
+      expect(ArtemisQL.parse('^^')).toMatchObject({
+        value: [
+          {
+            index: 0,
+            type: "incomplete:pin",
+            value: null,
+          },
+          {
+            index: 1,
+            type: "incomplete:pin",
+            value: null,
+          },
+        ],
+      });
+    });
+  });
+
   describe('pair', () => {
     test('can parse a key-value pair', () => {
       expect(ArtemisQL.parse('key:value')).toMatchObject({

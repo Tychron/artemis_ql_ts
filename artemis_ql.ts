@@ -1,5 +1,6 @@
-/*
+/**
  * Artemis QL Client Library
+ *
  * This module provides the tokenizer and parsing functions from artemis_ql
  * (https://github.com/Tychron/artemis_ql)
  * By itself is not useful to you (the usual user), instead this library is intended to be used
@@ -222,6 +223,8 @@ export function parseQuotedString(str: string, i: number) {
         result.push('"');
       } else if (c === CHAR_TABLE['0']) {
         result.push('\0');
+      } else if (c === CHAR_TABLE.a) {
+        result.push('\a');
       } else if (c === CHAR_TABLE.b) {
         result.push('\b');
       } else if (c === CHAR_TABLE.f) {
@@ -253,7 +256,25 @@ export function parseQuotedString(str: string, i: number) {
   };
 }
 
-export function tokenize(str: string, i: number = 0) {
+type TokenizeResult = {
+  i: number;
+  i2: number;
+  value: Token[];
+};
+
+/**
+ *
+ * Args:
+ * * `str` [String] the string to tokenize.
+ * * `i` [String] the position to start tokenizing from
+ *
+ * Return:
+ * * `result` [Object]
+ *   * `i` [Number] the start position of the tokenizer
+ *   * `i2` [Number] the final position of the tokenizer
+ *   * `value` [Array<Token>] the list of tokens
+ */
+export function tokenize(str: string, i: number = 0): TokenizeResult {
   const l = str.length;
   let i2 = i;
 
@@ -456,7 +477,8 @@ export function parseTokens(tokens: Token[]): Token[] {
             result.push({
               ...subjectToken,
               isError: true,
-              type: 'pin',
+              type: 'incomplete:pin',
+              value: null,
             });
             i += 1;
           }
@@ -464,6 +486,7 @@ export function parseTokens(tokens: Token[]): Token[] {
           result.push({
             ...subjectToken,
             type: 'incomplete:pin',
+            value: null,
           });
           i += 1;
         }
@@ -532,27 +555,68 @@ type DecodeTokenResult = {
 
 // let decodeToken: (tokens: Token[], i: number) => DecodeTokenResult;
 
+/**
+ * Determines if a specified token is embeddable in a partial token.
+ * Partials will only contain `word`, `quoted_string`, `wildcard` or `any_char` tokens.
+ *
+ * Args:
+ * * `token` [Token] the token to test.
+ *
+ * Return:
+ * * `result` [Boolean] true if the token is compatible with a partial token, false otherwise.
+ */
+function isPartialCompatible(token: Token): boolean {
+  switch (token.type) {
+    case 'word':
+    case 'quoted_string':
+    case 'wildcard':
+    case 'any_char':
+      return true;
+    default:
+      return false;
+  }
+}
+
 export function decodeTokenAsValue(tokens: Token[], i: number) {
   const acc: Token[] = [];
   const l = tokens.length;
   let i2 = i;
 
   let subjectToken: Token;
+  let nextToken: Token;
   let noMoreValues: boolean = false;
+  let isPartialContent: boolean = false;
+
   while (i2 < l) {
     subjectToken = tokens[i2];
+    nextToken = tokens[i2 + 1];
     switch (subjectToken.type) {
-      case 'word':
-      case 'quoted_string':
       case 'null':
       case 'range':
       case 'cmp':
       case 'pin':
+      case 'incomplete:pin':
+        noMoreValues = true;
+        if (!isPartialContent) {
+          acc.push(subjectToken);
+          i2 += 1;
+        }
+        break;
+
+      case 'word':
+      case 'quoted_string':
       case 'wildcard':
       case 'any_char':
+        isPartialContent = true;
+        if (nextToken) {
+          noMoreValues = !isPartialCompatible(nextToken);
+        } else {
+          noMoreValues = true;
+        }
         acc.push(subjectToken);
         i2 += 1;
         break;
+
       case 'group': {
         const {
           tokens: newTokens,
@@ -562,7 +626,9 @@ export function decodeTokenAsValue(tokens: Token[], i: number) {
           acc.push(newToken);
         });
         i2 += 1;
+        noMoreValues = true;
       } break;
+
       default:
         noMoreValues = true;
         break;
@@ -574,14 +640,18 @@ export function decodeTokenAsValue(tokens: Token[], i: number) {
 
   const result: Token[] = [];
 
-  if (acc.length === 1) {
+  if (acc.length === 0) {
+    // Nothing
+  } else if (acc.length === 1) {
     result.push(acc[0]);
-  } else if (acc.length > 1) {
+  } else if (isPartialContent && acc.length > 1) {
     result.push({
       type: 'partial',
       index: acc[0].index,
       value: acc,
     });
+  } else {
+    throw new Error('unexpected end of values');
   }
 
   return {
@@ -908,7 +978,42 @@ export function decodeTokens(tokens: Token[]) {
   };
 }
 
-export function parse(str: string) {
+type ParseResult = {
+  tokenize: {
+    i: number;
+    i2: number;
+    value: Token[];
+  };
+  decode: {
+    i: number;
+    i2: number;
+    value: Token[];
+  };
+  value: Token[];
+};
+
+/**
+ * Parse an Artemis QL search string.
+ * The original tokenize step result is returned in a `tokenize` object.
+ *
+ * Args:
+ * * `str` [String] the original search string to parse.
+ *
+ * Return:
+ * * `result` [Object]
+ *   * `tokenize` [Object]
+ *     * `i` [Number] the original start position of the first valid token in the search string.
+ *     * `i2` [Number] the end position of the last token in the search string.
+ *     * `value` [Array<Token>] an array containing all parsed tokens.
+ *                              (these are the raw underlying tokens used by the decode step).
+ *   * `decode` [Object]
+ *     * `i` [Number] the original start position of the first valid token in the search string.
+ *     * `i2` [Number] the end position of the last token in the search string.
+ *     * `value` [Array<Token>] an array containing all decoded tokens.
+ *   * `value` [Array<Token>] Same as the `decode.tokens` but provided for convenience in case
+ *                            an additional step is added in the future.
+ */
+export function parse(str: string): ParseResult {
   const {
     i,
     i2,
