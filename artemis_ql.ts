@@ -5,7 +5,10 @@
  * (https://github.com/Tychron/artemis_ql)
  * By itself is not useful to you (the usual user), instead this library is intended to be used
  * to provide client-side parsing of search queries for features such as suggestions.
+ *
  */
+export const VERSION = '2024.7.18.0';
+
 type CharTable = { [index: number]: boolean };
 
 type RangeValue = {
