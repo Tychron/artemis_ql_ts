@@ -1,44 +1,161 @@
-/**
+/*
  * Artemis QL Client Library
- *
  * This module provides the tokenizer and parsing functions from artemis_ql
  * (https://github.com/Tychron/artemis_ql)
  * By itself is not useful to you (the usual user), instead this library is intended to be used
  * to provide client-side parsing of search queries for features such as suggestions.
- *
  */
-export const VERSION = '2024.7.18.0';
+export const VERSION = '2025.07.22';
 
-type CharTable = { [index: number]: boolean };
+export type CharTable = { [index: number]: boolean };
 
-type RangeValue = {
+export type RangeValue = {
   // eslint-disable-next-line
-  s: Token,
+  s: Token;
   // eslint-disable-next-line
-  e: Token,
+  e: Token;
 };
-type PairValue = {
+export type PairValue = {
   // eslint-disable-next-line
-  key: Token,
+  key: Token;
   // eslint-disable-next-line
-  value: Token,
+  value: Token;
 };
-type CmpValue = {
-  op: string,
+export type CmpValue = {
+  op: string;
   // eslint-disable-next-line
-  value: Token,
+  value: Token;
 };
-type Token = {
-  isError?: boolean,
-  type: string,
-  index: number,
-  value: null | number | string | boolean | CmpValue | RangeValue | PairValue | Token[],
+export type BaseToken = {
+  isError?: boolean;
+  type: string;
+  index: number;
+  pos: number[],
+  // eslint-disable-next-line
+  value: null | number | string | boolean | CmpValue | RangeValue | PairValue | Token[];
 };
+
+export type WordToken = BaseToken & {
+  type: 'word';
+  value: string;
+};
+
+export type PinOpToken = BaseToken & {
+  type: 'pin_op';
+  value: boolean;
+};
+export type PinToken = BaseToken & {
+  type: 'pin' | 'incomplete:pin';
+  // eslint-disable-next-line
+  value: Token[];
+};
+export type CmpOpToken = BaseToken & {
+  type: 'cmp_op';
+  value: string;
+};
+export type CmpToken = BaseToken & {
+  type: 'cmp';
+  value: CmpValue;
+};
+export type PairOpToken = BaseToken & {
+  type: 'pair_op';
+  // eslint-disable-next-line
+  value: boolean;
+};
+export type PairToken = BaseToken & {
+  type: 'pair' | 'incomplete:pair';
+  value: PairValue;
+};
+export type RangeOpToken = BaseToken & {
+  type: 'range_op';
+  // eslint-disable-next-line
+  value: boolean;
+};
+export type ContinuationOpToken = BaseToken & {
+  type: 'continuation_op';
+  // eslint-disable-next-line
+  value: boolean;
+};
+export type RangeToken = BaseToken & {
+  type: 'range';
+  value: RangeValue;
+};
+export type SpaceToken = BaseToken & {
+  type: 'space';
+  value: string;
+};
+export type QuotedStringToken = BaseToken & {
+  type: 'quoted_string' | 'incomplete:quoted_string';
+  value: string;
+};
+export type PartialToken = BaseToken & {
+  type: 'partial';
+  // eslint-disable-next-line
+  value: Token[];
+};
+export type InfinityToken = BaseToken & {
+  type: 'infinity';
+  value: number;
+};
+export type GroupToken = BaseToken & {
+  type: 'group' | 'incomplete:group';
+  // eslint-disable-next-line
+  value: Token[];
+};
+export type ListToken = BaseToken & {
+  type: 'list';
+  // eslint-disable-next-line
+  value: Token[];
+};
+export type WildcardToken = BaseToken & {
+  type: 'wildcard' | 'any_char';
+  // eslint-disable-next-line
+  value: boolean;
+};
+export type AndToken = BaseToken & {
+  type: 'and';
+  value: boolean;
+};
+export type OrToken = BaseToken & {
+  type: 'or';
+  value: boolean;
+};
+export type NotToken = BaseToken & {
+  type: 'not';
+  value: boolean;
+};
+export type NullToken = BaseToken & {
+  type: 'null';
+  value: boolean;
+};
+export type Token =
+  AndToken
+  | OrToken
+  | NotToken
+  | NullToken
+  | WildcardToken
+  | PairOpToken
+  | PairToken
+  | PinOpToken
+  | PinToken
+  | CmpOpToken
+  | CmpToken
+  | RangeOpToken
+  | RangeToken
+  | ContinuationOpToken
+  | QuotedStringToken
+  | PartialToken
+  | SpaceToken
+  | InfinityToken
+  | WordToken
+  | GroupToken
+  | ListToken;
 
 function makeInfinityToken(): Token {
   return {
     type: 'infinity',
-    index: 0,
+    index: -1,
+    pos: [-1, -1],
     value: Infinity,
   };
 }
@@ -226,8 +343,6 @@ export function parseQuotedString(str: string, i: number) {
         result.push('"');
       } else if (c === CHAR_TABLE['0']) {
         result.push('\0');
-      } else if (c === CHAR_TABLE.a) {
-        result.push('\a');
       } else if (c === CHAR_TABLE.b) {
         result.push('\b');
       } else if (c === CHAR_TABLE.f) {
@@ -259,25 +374,7 @@ export function parseQuotedString(str: string, i: number) {
   };
 }
 
-type TokenizeResult = {
-  i: number;
-  i2: number;
-  value: Token[];
-};
-
-/**
- *
- * Args:
- * * `str` [String] the string to tokenize.
- * * `i` [String] the position to start tokenizing from
- *
- * Return:
- * * `result` [Object]
- *   * `i` [Number] the start position of the tokenizer
- *   * `i2` [Number] the final position of the tokenizer
- *   * `value` [Array<Token>] the list of tokens
- */
-export function tokenize(str: string, i: number = 0): TokenizeResult {
+export function tokenize(str: string, i: number = 0) {
   const l = str.length;
   let i2 = i;
 
@@ -299,6 +396,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'space',
         index: i2,
+        pos: [i2, i3],
         value,
       });
       i2 = i3;
@@ -312,6 +410,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: closed ? 'quoted_string' : 'incomplete:quoted_string',
         index: i2,
+        pos: [i2, i3],
         value,
       });
       i2 = i3;
@@ -319,6 +418,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'pin_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: true,
       });
       i2 += 1;
@@ -326,6 +426,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'cmp_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: 'gte',
       });
       i2 += 2;
@@ -333,6 +434,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'cmp_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: 'lte',
       });
       i2 += 2;
@@ -340,6 +442,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'cmp_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: 'nfuzz',
       });
       i2 += 2;
@@ -347,6 +450,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'cmp_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: 'gt',
       });
       i2 += 1;
@@ -354,6 +458,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'cmp_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: 'lt',
       });
       i2 += 1;
@@ -361,6 +466,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'cmp_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: 'neq',
       });
       i2 += 1;
@@ -368,6 +474,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'cmp_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: 'eq',
       });
       i2 += 1;
@@ -375,6 +482,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'cmp_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: 'fuzz',
       });
       i2 += 1;
@@ -390,6 +498,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: isClosed ? 'group' : 'incomplete:group',
         index: i2,
+        pos: [i2, i3],
         value,
       });
       i2 = i3 + 1;
@@ -399,6 +508,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'wildcard',
         index: i2,
+        pos: [i2, i2 + 1],
         value: true,
       });
       i2 += 1;
@@ -406,6 +516,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'any_char',
         index: i2,
+        pos: [i2, i2 + 1],
         value: true,
       });
       i2 += 1;
@@ -413,6 +524,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'pair_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: true,
       });
       i2 += 1;
@@ -420,6 +532,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'range_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: true,
       });
       i2 += 2;
@@ -427,6 +540,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
       result.push({
         type: 'continuation_op',
         index: i2,
+        pos: [i2, i2 + 1],
         value: true,
       });
       i2 += 1;
@@ -437,6 +551,7 @@ export function tokenize(str: string, i: number = 0): TokenizeResult {
         result.push({
           type: 'word',
           index: i2,
+          pos: [i2, i2 + value.length],
           value,
         });
 
@@ -480,8 +595,8 @@ export function parseTokens(tokens: Token[]): Token[] {
             result.push({
               ...subjectToken,
               isError: true,
-              type: 'incomplete:pin',
-              value: null,
+              type: 'pin',
+              value: [],
             });
             i += 1;
           }
@@ -489,7 +604,7 @@ export function parseTokens(tokens: Token[]): Token[] {
           result.push({
             ...subjectToken,
             type: 'incomplete:pin',
-            value: null,
+            value: [],
           });
           i += 1;
         }
@@ -558,68 +673,27 @@ type DecodeTokenResult = {
 
 // let decodeToken: (tokens: Token[], i: number) => DecodeTokenResult;
 
-/**
- * Determines if a specified token is embeddable in a partial token.
- * Partials will only contain `word`, `quoted_string`, `wildcard` or `any_char` tokens.
- *
- * Args:
- * * `token` [Token] the token to test.
- *
- * Return:
- * * `result` [Boolean] true if the token is compatible with a partial token, false otherwise.
- */
-function isPartialCompatible(token: Token): boolean {
-  switch (token.type) {
-    case 'word':
-    case 'quoted_string':
-    case 'wildcard':
-    case 'any_char':
-      return true;
-    default:
-      return false;
-  }
-}
-
 export function decodeTokenAsValue(tokens: Token[], i: number) {
   const acc: Token[] = [];
   const l = tokens.length;
   let i2 = i;
 
   let subjectToken: Token;
-  let nextToken: Token;
   let noMoreValues: boolean = false;
-  let isPartialContent: boolean = false;
-
   while (i2 < l) {
     subjectToken = tokens[i2];
-    nextToken = tokens[i2 + 1];
     switch (subjectToken.type) {
+      case 'word':
+      case 'quoted_string':
       case 'null':
       case 'range':
       case 'cmp':
       case 'pin':
-      case 'incomplete:pin':
-        noMoreValues = true;
-        if (!isPartialContent) {
-          acc.push(subjectToken);
-          i2 += 1;
-        }
-        break;
-
-      case 'word':
-      case 'quoted_string':
       case 'wildcard':
       case 'any_char':
-        isPartialContent = true;
-        if (nextToken) {
-          noMoreValues = !isPartialCompatible(nextToken);
-        } else {
-          noMoreValues = true;
-        }
         acc.push(subjectToken);
         i2 += 1;
         break;
-
       case 'group': {
         const {
           tokens: newTokens,
@@ -629,9 +703,7 @@ export function decodeTokenAsValue(tokens: Token[], i: number) {
           acc.push(newToken);
         });
         i2 += 1;
-        noMoreValues = true;
       } break;
-
       default:
         noMoreValues = true;
         break;
@@ -643,18 +715,17 @@ export function decodeTokenAsValue(tokens: Token[], i: number) {
 
   const result: Token[] = [];
 
-  if (acc.length === 0) {
-    // Nothing
-  } else if (acc.length === 1) {
+  if (acc.length === 1) {
     result.push(acc[0]);
-  } else if (isPartialContent && acc.length > 1) {
+  } else if (acc.length > 1) {
+    const first = acc[0];
+    const last = acc[acc.length - 1];
     result.push({
       type: 'partial',
-      index: acc[0].index,
+      index: first.index,
+      pos: [first.pos[0], last.pos[1]],
       value: acc,
     });
-  } else {
-    throw new Error('unexpected end of values');
   }
 
   return {
@@ -717,18 +788,21 @@ function decodeTokenPair(parent: Token, key: Token | null, tokens: Token[], i: n
     value = valueTokens[0];
   }
 
+  const s = key ? key.pos[0] : parent.pos[0];
+  const e = value ? value.pos[1] : parent.pos[1];
+  const token: PairToken = {
+    type: (key && value) ? 'pair' : 'incomplete:pair',
+    index: key ? key.index : parent.index,
+    pos: [s, e],
+    value: {
+      key,
+      value,
+    } as PairValue,
+  };
+
   return {
     i2,
-    tokens: [
-      {
-        type: (key && value) ? 'pair' : 'incomplete:pair',
-        index: parent.index,
-        value: {
-          key,
-          value,
-        } as PairValue,
-      },
-    ],
+    tokens: [token],
   };
 }
 
@@ -772,6 +846,18 @@ function decodeTokenOther(tokens: Token[], i: number): DecodeTokenOtherResult {
           // eslint-disable-next-line
           e = rightValueTokens[0];
         }
+        const pos: number[] = [];
+        if (valueToken) {
+          pos.push(valueToken.pos[0]);
+        } else {
+          pos.push(-1);
+        }
+        if (e) {
+          pos.push(e.pos[1]);
+        } else {
+          pos.push(-1);
+        }
+
         return {
           isLast: false,
           i2,
@@ -779,6 +865,7 @@ function decodeTokenOther(tokens: Token[], i: number): DecodeTokenOtherResult {
             {
               type: 'range',
               index,
+              pos,
               value: {
                 s: valueToken,
                 e,
@@ -793,6 +880,19 @@ function decodeTokenOther(tokens: Token[], i: number): DecodeTokenOtherResult {
           tokens: listTokens,
         } = decodeTokensAsValueList(tokens, i);
         i2 = i4;
+        const pos: number[] = [];
+        const first = listTokens[0];
+        const last = listTokens.length > 0 ? listTokens[listTokens.length - 1] : null;
+        if (first) {
+          pos.push(first.pos[0]);
+        } else {
+          pos.push(-1);
+        }
+        if (last) {
+          pos.push(last.pos[1]);
+        } else {
+          pos.push(-1);
+        }
         return {
           isLast: false,
           i2,
@@ -800,6 +900,7 @@ function decodeTokenOther(tokens: Token[], i: number): DecodeTokenOtherResult {
             {
               type: 'list',
               index,
+              pos,
               value: listTokens,
             },
           ],
@@ -865,15 +966,17 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
         tokens: valueTokens,
       } = decodeTokenAsValue(tokens, i + 1);
 
+      const value = valueTokens[0];
       return {
         i2,
         tokens: [
           {
             type: 'cmp',
             index: subjectToken.index,
+            pos: [subjectToken.pos[0], value ? value.pos[1] : -1],
             value: {
               op: subjectToken.value,
-              value: valueTokens[0],
+              value,
             } as CmpValue,
           },
         ],
@@ -886,15 +989,18 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
           tokens: valueTokens,
         } = decodeTokenAsValue(tokens, i + 1);
 
+        const s = makeInfinityToken();
+        const e = valueTokens[0];
         return {
           i2,
           tokens: [
             {
               type: 'range',
               index: subjectToken.index,
+              pos: [subjectToken.pos[0], e ? e.pos[1] : -1],
               value: {
-                s: makeInfinityToken(),
-                e: valueTokens[0],
+                s,
+                e,
               } as RangeValue,
             },
           ],
@@ -908,6 +1014,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
           {
             type: 'range',
             index: subjectToken.index,
+            pos: [subjectToken.index, subjectToken.index + 1],
             value: {
               s: makeInfinityToken(),
               e: makeInfinityToken(),
@@ -919,7 +1026,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
     case 'quoted_string':
     case 'word':
       if (nextToken && nextToken.type === 'pair_op') {
-        return decodeTokenPair(subjectToken, subjectToken, tokens, i + 2);
+        return decodeTokenPair(nextToken, subjectToken, tokens, i + 2);
       }
       return decodeTokenOther(tokens, i);
     case 'pair_op':
@@ -930,12 +1037,15 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
         tokens: listTokens,
       } = decodeTokensAsValueList(tokens, i);
 
+      const first = listTokens[0];
+      const last = listTokens.length > 0 ? listTokens[listTokens.length - 1] : null;
       return {
         i2,
         tokens: [
           {
             index: subjectToken.index,
             type: 'list',
+            pos: [first ? first.pos[0] : -1, last ? last.pos[1] : -1],
             value: listTokens,
           },
         ],
@@ -981,42 +1091,7 @@ export function decodeTokens(tokens: Token[]) {
   };
 }
 
-type ParseResult = {
-  tokenize: {
-    i: number;
-    i2: number;
-    value: Token[];
-  };
-  decode: {
-    i: number;
-    i2: number;
-    value: Token[];
-  };
-  value: Token[];
-};
-
-/**
- * Parse an Artemis QL search string.
- * The original tokenize step result is returned in a `tokenize` object.
- *
- * Args:
- * * `str` [String] the original search string to parse.
- *
- * Return:
- * * `result` [Object]
- *   * `tokenize` [Object]
- *     * `i` [Number] the original start position of the first valid token in the search string.
- *     * `i2` [Number] the end position of the last token in the search string.
- *     * `value` [Array<Token>] an array containing all parsed tokens.
- *                              (these are the raw underlying tokens used by the decode step).
- *   * `decode` [Object]
- *     * `i` [Number] the original start position of the first valid token in the search string.
- *     * `i2` [Number] the end position of the last token in the search string.
- *     * `value` [Array<Token>] an array containing all decoded tokens.
- *   * `value` [Array<Token>] Same as the `decode.tokens` but provided for convenience in case
- *                            an additional step is added in the future.
- */
-export function parse(str: string): ParseResult {
+export function parse(str: string) {
   const {
     i,
     i2,
@@ -1050,3 +1125,8 @@ export default {
   tokenize,
   parse,
 };
+/**
+ * * Date 2025-07-22
+ *   * Broke down Token types
+ *   * Added pos attribute to Token, it contains the start and end values
+ */
