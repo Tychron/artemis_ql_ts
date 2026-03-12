@@ -5,7 +5,7 @@
  * By itself is not useful to you (the usual user), instead this library is intended to be used
  * to provide client-side parsing of search queries for features such as suggestions.
  */
-export const VERSION = '2025.07.22';
+export const VERSION = '2025.7.22';
 
 export type CharTable = { [index: number]: boolean };
 
@@ -319,44 +319,77 @@ export function parseQuotedString(str: string, i: number) {
       // escape sequence
       i2 += 1;
       c = str.charCodeAt(i2);
+      if (Number.isNaN(c)) {
+        break;
+      }
       if (c === CHAR_TABLE.u) {
         // unicode sequence
         i2 += 1;
         c = str.charCodeAt(i2);
         if (c === CHAR_TABLE['{']) {
-          const {
-            i2: i3,
-            value,
-          } = readUntilCharCode(str, i2 + 1, CHAR_TABLE['}']);
-          const code = parseInt(value, 16);
-          result.push(String.fromCharCode(code));
-          i2 = i3;
+          const start = i2 + 1;
+          let end = start;
+          while (end < l && str.charCodeAt(end) !== CHAR_TABLE['}']) {
+            end += 1;
+          }
+
+          if (end < l) {
+            const hexcode = str.slice(start, end);
+            const code = parseInt(hexcode, 16);
+            if (!Number.isNaN(code)) {
+              result.push(String.fromCharCode(code));
+            }
+            i2 = end + 1;
+          } else {
+            // Incomplete unicode escape, keep parsing graceful and mark as incomplete quoted string.
+            break;
+          }
         } else {
           const hexcode = str.slice(i2, i2 + 4);
           const code = parseInt(hexcode, 16);
-          result.push(String.fromCharCode(code));
-          i2 += 6;
+          if (!Number.isNaN(code) && hexcode.length === 4) {
+            result.push(String.fromCharCode(code));
+            i2 += 4;
+          } else {
+            // Malformed unicode escape, consume the current char and continue.
+            result.push(str[i2] || '');
+            i2 += 1;
+          }
         }
       } else if (c === CHAR_TABLE['\\']) {
         result.push('\\');
+        i2 += 1;
       } else if (c === CHAR_TABLE['"']) {
         result.push('"');
+        i2 += 1;
       } else if (c === CHAR_TABLE['0']) {
         result.push('\0');
+        i2 += 1;
       } else if (c === CHAR_TABLE.b) {
         result.push('\b');
+        i2 += 1;
       } else if (c === CHAR_TABLE.f) {
         result.push('\f');
+        i2 += 1;
       } else if (c === CHAR_TABLE.n) {
         result.push('\n');
+        i2 += 1;
       } else if (c === CHAR_TABLE.r) {
         result.push('\r');
+        i2 += 1;
       } else if (c === CHAR_TABLE.s) {
         result.push(' ');
+        i2 += 1;
       } else if (c === CHAR_TABLE.t) {
         result.push('\t');
+        i2 += 1;
       } else if (c === CHAR_TABLE.v) {
         result.push('\v');
+        i2 += 1;
+      } else {
+        // Unknown escape sequence, keep the escaped char verbatim and move on.
+        result.push(str[i2]);
+        i2 += 1;
       }
     } else {
       result.push(str[i2]);
@@ -685,6 +718,7 @@ export function decodeTokenAsValue(tokens: Token[], i: number) {
     switch (subjectToken.type) {
       case 'word':
       case 'quoted_string':
+      case 'incomplete:quoted_string':
       case 'null':
       case 'range':
       case 'cmp':
@@ -764,7 +798,8 @@ export function decodeTokensAsValueList(tokens: Token[], i: number) {
       // keep going!
       i2 += 1;
     } else {
-      throw new Error(`list must be terminated by space or eos (got ${token.type})`);
+      // Invalid list continuation; stop list decoding and let outer parser continue.
+      break;
     }
   }
 
@@ -959,6 +994,17 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
         ],
       };
     }
+    case 'incomplete:pin': {
+      return {
+        i2: i + 1,
+        tokens: [
+          {
+            ...subjectToken,
+            isError: true,
+          },
+        ],
+      };
+    }
     case 'cmp_op': {
       // Comparison operators appear before a 'value' token
       const {
@@ -1024,6 +1070,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
       };
     }
     case 'quoted_string':
+    case 'incomplete:quoted_string':
     case 'word':
       if (nextToken && nextToken.type === 'pair_op') {
         return decodeTokenPair(nextToken, subjectToken, tokens, i + 2);
