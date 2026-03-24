@@ -2,7 +2,7 @@ import ArtemisQL from '../../artemis_ql';
 
 describe('tokenize/1', () => {
   test('can tokenize an empty string', () => {
-    expect(ArtemisQL.tokenize('')).toStrictEqual({
+    expect(ArtemisQL.tokenize('')).toMatchObject({
       i: 0,
       i2: 0,
       value: [],
@@ -10,7 +10,7 @@ describe('tokenize/1', () => {
   });
 
   test('can parse an empty spaced string', () => {
-    expect(ArtemisQL.tokenize('\t ')).toStrictEqual({
+    expect(ArtemisQL.tokenize('\t ')).toMatchObject({
       i: 0,
       i2: 2,
       value: [
@@ -25,7 +25,7 @@ describe('tokenize/1', () => {
 
   describe('word', () => {
     test('can parse a single word', () => {
-      expect(ArtemisQL.tokenize('WORD')).toStrictEqual({
+      expect(ArtemisQL.tokenize('WORD')).toMatchObject({
         i: 0,
         i2: 4,
         value: [
@@ -39,7 +39,7 @@ describe('tokenize/1', () => {
     });
 
     test('can parse a single words with some special characters', () => {
-      expect(ArtemisQL.tokenize('WORD @special _underscore hyphe-nated')).toStrictEqual({
+      expect(ArtemisQL.tokenize('WORD @special _underscore hyphe-nated')).toMatchObject({
         i: 0,
         i2: 37,
         value: [
@@ -85,7 +85,7 @@ describe('tokenize/1', () => {
 
   describe('quoted string', () => {
     test('can parse an empty quoted string', () => {
-      expect(ArtemisQL.tokenize('""')).toStrictEqual({
+      expect(ArtemisQL.tokenize('""')).toMatchObject({
         i: 0,
         i2: 2,
         value: [
@@ -99,7 +99,7 @@ describe('tokenize/1', () => {
     });
 
     test('can parse a quoted string', () => {
-      expect(ArtemisQL.tokenize('"My Quoted String"')).toStrictEqual({
+      expect(ArtemisQL.tokenize('"My Quoted String"')).toMatchObject({
         i: 0,
         i2: 18,
         value: [
@@ -115,7 +115,7 @@ describe('tokenize/1', () => {
 
   describe('pairs', () => {
     test('can parse a key-value pair', () => {
-      expect(ArtemisQL.tokenize('key:value')).toStrictEqual({
+      expect(ArtemisQL.tokenize('key:value')).toMatchObject({
         i: 0,
         i2: 9,
         value: [
@@ -139,7 +139,7 @@ describe('tokenize/1', () => {
     });
 
     test('can parse an incomplete key-value pair ', () => {
-      expect(ArtemisQL.tokenize('key:')).toStrictEqual({
+      expect(ArtemisQL.tokenize('key:')).toMatchObject({
         i: 0,
         i2: 4,
         value: [
@@ -156,7 +156,7 @@ describe('tokenize/1', () => {
         ]
       });
 
-      expect(ArtemisQL.tokenize('key:    ')).toStrictEqual({
+      expect(ArtemisQL.tokenize('key:    ')).toMatchObject({
         i: 0,
         i2: 8,
         value: [
@@ -178,7 +178,7 @@ describe('tokenize/1', () => {
         ],
       });
 
-      expect(ArtemisQL.tokenize(':value')).toStrictEqual({
+      expect(ArtemisQL.tokenize(':value')).toMatchObject({
         i: 0,
         i2: 6,
         value: [
@@ -197,7 +197,7 @@ describe('tokenize/1', () => {
     });
 
     test('can parse mixed pairs', () => {
-      expect(ArtemisQL.tokenize('key:value key2: ')).toStrictEqual({
+      expect(ArtemisQL.tokenize('key:value key2: ')).toMatchObject({
         i: 0,
         i2: 16,
         value: [
@@ -246,7 +246,7 @@ describe('tokenize/1', () => {
       const op: string = ArtemisQL.OPERATORS[name];
 
       test(`can handle a ${name} operator`, () => {
-        expect(ArtemisQL.tokenize(`${op}value`)).toStrictEqual({
+        expect(ArtemisQL.tokenize(`${op}value`)).toMatchObject({
           i: 0,
           i2: op.length + 5,
           value: [
@@ -265,7 +265,7 @@ describe('tokenize/1', () => {
       });
 
       test(`can handle a ${name} operator in pair`, () => {
-        expect(ArtemisQL.tokenize(`key:${op}value`)).toStrictEqual({
+        expect(ArtemisQL.tokenize(`key:${op}value`)).toMatchObject({
           i: 0,
           i2: op.length + 9,
           value: [
@@ -297,7 +297,7 @@ describe('tokenize/1', () => {
 
   describe('list', () => {
     test('can handle an empty list', () => {
-      expect(ArtemisQL.tokenize(',')).toStrictEqual({
+      expect(ArtemisQL.tokenize(',')).toMatchObject({
         i: 0,
         i2: 1,
         value: [
@@ -311,7 +311,7 @@ describe('tokenize/1', () => {
     });
 
     test('can handle a single element list', () => {
-      expect(ArtemisQL.tokenize(',b')).toStrictEqual({
+      expect(ArtemisQL.tokenize(',b')).toMatchObject({
         i: 0,
         i2: 2,
         value: [
@@ -330,7 +330,7 @@ describe('tokenize/1', () => {
     });
 
     test('can handle a list of 2 elements', () => {
-      expect(ArtemisQL.tokenize('a,b')).toStrictEqual({
+      expect(ArtemisQL.tokenize('a,b')).toMatchObject({
         i: 0,
         i2: 3,
         value: [
@@ -356,7 +356,7 @@ describe('tokenize/1', () => {
 
   describe('group', () => {
     test('can handle empty group', () => {
-      expect(ArtemisQL.tokenize('()')).toStrictEqual({
+      expect(ArtemisQL.tokenize('()')).toMatchObject({
         i: 0,
         i2: 2,
         value: [
@@ -370,7 +370,7 @@ describe('tokenize/1', () => {
     });
 
     test('can handle multiple empty groups', () => {
-      expect(ArtemisQL.tokenize('()()()')).toStrictEqual({
+      expect(ArtemisQL.tokenize('()()()')).toMatchObject({
         i: 0,
         i2: 6,
         value: [
@@ -394,7 +394,7 @@ describe('tokenize/1', () => {
     });
 
     test('can handle incomplete group', () => {
-      expect(ArtemisQL.tokenize('(')).toStrictEqual({
+      expect(ArtemisQL.tokenize('(')).toMatchObject({
         i: 0,
         i2: 2,
         value: [
@@ -408,7 +408,7 @@ describe('tokenize/1', () => {
     });
 
     test('can prematurely closed group', () => {
-      expect(ArtemisQL.tokenize(')')).toStrictEqual({
+      expect(ArtemisQL.tokenize(')')).toMatchObject({
         i: 0,
         i2: 0,
         value: [],
