@@ -119,13 +119,13 @@ describe('parse/1', () => {
         value: [
           {
             index: 0,
-            type: "incomplete:pin",
-            value: null,
+            type: "pin",
+            value: [],
           },
           {
             index: 1,
             type: "incomplete:pin",
-            value: null,
+            value: [],
           },
         ],
       });
