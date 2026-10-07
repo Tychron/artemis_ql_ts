@@ -396,7 +396,7 @@ describe('tokenize/1', () => {
     test('can handle incomplete group', () => {
       expect(ArtemisQL.tokenize('(')).toMatchObject({
         i: 0,
-        i2: 2,
+        i2: 1,
         value: [
           {
             index: 0,
