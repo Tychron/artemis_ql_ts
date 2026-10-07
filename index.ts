@@ -5,7 +5,7 @@
  * By itself is not useful to you (the usual user), instead this library is intended to be used
  * to provide client-side parsing of search queries for features such as suggestions.
  */
-export const VERSION = '2025.7.22';
+export const VERSION = '2026.10.7';
 
 export type CharTable = { [index: number]: boolean };
 
@@ -17,14 +17,14 @@ export type RangeValue = {
 };
 export type PairValue = {
   // eslint-disable-next-line
-  key: Token;
+  key: Token | null;
   // eslint-disable-next-line
-  value: Token;
+  value: Token | null;
 };
 export type CmpValue = {
   op: string;
   // eslint-disable-next-line
-  value: Token;
+  value: Token | null;
 };
 export type BaseToken = {
   isError?: boolean;
@@ -126,7 +126,7 @@ export type NotToken = BaseToken & {
 };
 export type NullToken = BaseToken & {
   type: 'null';
-  value: boolean;
+  value: null;
 };
 export type Token =
   AndToken
@@ -279,7 +279,7 @@ export function readUntilCharCode(str: string, i: number, expected: number) {
   }
 
   if (ok) {
-    const value = str.slice(i, i2 - 1);
+    const value = str.slice(i, i2);
     return {
       i,
       i2,
@@ -290,121 +290,86 @@ export function readUntilCharCode(str: string, i: number, expected: number) {
   throw new Error('read until end, but didn\'t find expected character');
 }
 
+// These are the server tokenizer's exact ranges, not a Unicode letter category.
+export function isWordChar(c: number): boolean {
+  return [0x40, 0x2D, 0x2B, 0x5F, 0x2E, 0x2F].includes(c)
+    || (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)
+    || (c >= 0x30 && c <= 0x39)
+    || (c >= 0x00C0 && c < 0x00D7) || (c >= 0x00D8 && c < 0x00F7)
+    || (c >= 0x00F8 && c < 0x0100) || (c >= 0x0180 && c < 0x01C0)
+    || (c >= 0x01C4 && c < 0x02B9) || (c >= 0x0370 && c < 0x0374)
+    || (c >= 0x0376 && c < 0x0378) || (c >= 0x037B && c < 0x037E)
+    || c === 0x037F || c === 0x0386 || (c >= 0x0388 && c < 0x0483)
+    || (c >= 0x048A && c < 0x0530) || (c >= 0x0531 && c < 0xD7FF)
+    || (c >= 0xE000 && c <= 0x10FFFF);
+}
+
+function isScalar(c: number): boolean {
+  return (c >= 0 && c <= 0xD7FF) || (c >= 0xE000 && c <= 0x10FFFF);
+}
+
 export function parseQuotedString(str: string, i: number) {
-  const l = str.length;
-  let i2 = i;
-
-  let c: number;
-
-  c = str.charCodeAt(i2);
-
-  if (c !== CHAR_TABLE['"']) {
-    throw new Error(`Expected quotation mark, got ${str[i2]}`);
+  if (str[i] !== '"') {
+    throw new Error(`Expected quotation mark, got ${str[i]}`);
   }
-
-  const result = [];
-
-  let closed: boolean = false;
-
-  i2 += 1;
-  while (i2 < l) {
-    c = str.charCodeAt(i2);
-
-    if (c === CHAR_TABLE['"']) {
-      // closing quote
+  const result: string[] = [];
+  const escapes: { [key: string]: string } = {
+    '\\': '\\', '"': '"', '0': '\0', b: '\b', f: '\f', n: '\n',
+    r: '\r', s: ' ', t: '\t', v: '\v',
+  };
+  let i2 = i + 1;
+  let closed = false;
+  let isError = false;
+  while (i2 < str.length) {
+    if (str[i2] === '"') {
       closed = true;
       i2 += 1;
       break;
-    } else if (c === CHAR_TABLE['\\']) {
-      // escape sequence
+    }
+    if (str[i2] === '\\') {
+      const start = i2;
       i2 += 1;
-      c = str.charCodeAt(i2);
-      if (Number.isNaN(c)) {
-        break;
-      }
-      if (c === CHAR_TABLE.u) {
-        // unicode sequence
+      const escaped = str[i2];
+      if (escaped === 'u') {
         i2 += 1;
-        c = str.charCodeAt(i2);
-        if (c === CHAR_TABLE['{']) {
-          const start = i2 + 1;
-          let end = start;
-          while (end < l && str.charCodeAt(end) !== CHAR_TABLE['}']) {
-            end += 1;
-          }
-
-          if (end < l) {
-            const hexcode = str.slice(start, end);
-            const code = parseInt(hexcode, 16);
-            if (!Number.isNaN(code)) {
-              result.push(String.fromCharCode(code));
-            }
-            i2 = end + 1;
-          } else {
-            // Incomplete unicode escape, keep parsing graceful and mark as incomplete quoted string.
-            break;
-          }
+        const braced = str[i2] === '{';
+        if (braced) i2 += 1;
+        const hexStart = i2;
+        // Stop before a quote or non-hex character: malformed escapes must
+        // never swallow the closing quote or a subsequent query term.
+        while (i2 < str.length && /[0-9a-f]/i.test(str[i2])
+          && (braced || i2 - hexStart < 4)) i2 += 1;
+        const hex = str.slice(hexStart, i2);
+        const complete = braced ? str[i2] === '}' : hex.length === 4;
+        if (braced && str[i2] === '}') i2 += 1;
+        const code = Number.parseInt(hex, 16);
+        if (complete && hex.length > 0 && isScalar(code)) {
+          result.push(String.fromCodePoint(code));
         } else {
-          const hexcode = str.slice(i2, i2 + 4);
-          const code = parseInt(hexcode, 16);
-          if (!Number.isNaN(code) && hexcode.length === 4) {
-            result.push(String.fromCharCode(code));
-            i2 += 4;
-          } else {
-            // Malformed unicode escape, consume the current char and continue.
-            result.push(str[i2] || '');
-            i2 += 1;
-          }
+          isError = true;
+          result.push(str.slice(start, i2));
         }
-      } else if (c === CHAR_TABLE['\\']) {
-        result.push('\\');
-        i2 += 1;
-      } else if (c === CHAR_TABLE['"']) {
-        result.push('"');
-        i2 += 1;
-      } else if (c === CHAR_TABLE['0']) {
-        result.push('\0');
-        i2 += 1;
-      } else if (c === CHAR_TABLE.b) {
-        result.push('\b');
-        i2 += 1;
-      } else if (c === CHAR_TABLE.f) {
-        result.push('\f');
-        i2 += 1;
-      } else if (c === CHAR_TABLE.n) {
-        result.push('\n');
-        i2 += 1;
-      } else if (c === CHAR_TABLE.r) {
-        result.push('\r');
-        i2 += 1;
-      } else if (c === CHAR_TABLE.s) {
-        result.push(' ');
-        i2 += 1;
-      } else if (c === CHAR_TABLE.t) {
-        result.push('\t');
-        i2 += 1;
-      } else if (c === CHAR_TABLE.v) {
-        result.push('\v');
+      } else if (Object.prototype.hasOwnProperty.call(escapes, escaped)) {
+        result.push(escapes[escaped]);
         i2 += 1;
       } else {
-        // Unknown escape sequence, keep the escaped char verbatim and move on.
-        result.push(str[i2]);
-        i2 += 1;
+        isError = true;
+        if (i2 < str.length) i2 += 1;
+        result.push(str.slice(start, i2));
       }
     } else {
-      result.push(str[i2]);
-      i2 += 1;
+      const code = str.codePointAt(i2)!;
+      const width = code > 0xFFFF ? 2 : 1;
+      if (code < 0x20 || code === 0x7F || !isScalar(code)) isError = true;
+      result.push(str.slice(i2, i2 + width));
+      i2 += width;
     }
   }
-
-  const value = result.join('');
-
-  return {
-    closed,
-    i,
-    i2,
-    value,
-  };
+  // The UI keeps unfinished input for suggestions. A closed invalid quote
+  // follows the server's error policy; search consumers retain the raw query
+  // through their existing parse-error fallback instead of rewriting it.
+  if (closed && isError) throw new SyntaxError(`Invalid quoted string at ${i}`);
+  return { closed, isError, i, i2, value: result.join('') };
 }
 
 export function tokenize(str: string, i: number = 0) {
@@ -436,12 +401,14 @@ export function tokenize(str: string, i: number = 0) {
     } else if (c === CHAR_TABLE['"']) {
       const {
         closed,
+        isError,
         i2: i3,
         value,
       } = parseQuotedString(str, i2);
 
       result.push({
         type: closed ? 'quoted_string' : 'incomplete:quoted_string',
+        ...(isError ? { isError: true } : {}),
         index: i2,
         pos: [i2, i3],
         value,
@@ -459,7 +426,7 @@ export function tokenize(str: string, i: number = 0) {
       result.push({
         type: 'cmp_op',
         index: i2,
-        pos: [i2, i2 + 1],
+        pos: [i2, i2 + 2],
         value: 'gte',
       });
       i2 += 2;
@@ -467,7 +434,7 @@ export function tokenize(str: string, i: number = 0) {
       result.push({
         type: 'cmp_op',
         index: i2,
-        pos: [i2, i2 + 1],
+        pos: [i2, i2 + 2],
         value: 'lte',
       });
       i2 += 2;
@@ -475,7 +442,7 @@ export function tokenize(str: string, i: number = 0) {
       result.push({
         type: 'cmp_op',
         index: i2,
-        pos: [i2, i2 + 1],
+        pos: [i2, i2 + 2],
         value: 'nfuzz',
       });
       i2 += 2;
@@ -528,13 +495,14 @@ export function tokenize(str: string, i: number = 0) {
 
       c = str.charCodeAt(i3);
       const isClosed = c === CHAR_TABLE[')'];
+      const end = isClosed ? i3 + 1 : i3;
       result.push({
         type: isClosed ? 'group' : 'incomplete:group',
         index: i2,
-        pos: [i2, i3],
+        pos: [i2, end],
         value,
       });
-      i2 = i3 + 1;
+      i2 = end;
     } else if (c === CHAR_TABLE[')']) {
       break;
     } else if (c === CHAR_TABLE['*']) {
@@ -565,7 +533,7 @@ export function tokenize(str: string, i: number = 0) {
       result.push({
         type: 'range_op',
         index: i2,
-        pos: [i2, i2 + 1],
+        pos: [i2, i2 + 2],
         value: true,
       });
       i2 += 2;
@@ -578,20 +546,14 @@ export function tokenize(str: string, i: number = 0) {
       });
       i2 += 1;
     } else {
-      const parts = str.substr(i2).split(/^([@\w_-]+)/);
-      if (parts.length > 1) {
-        const value = parts[1];
-        result.push({
-          type: 'word',
-          index: i2,
-          pos: [i2, i2 + value.length],
-          value,
-        });
-
-        i2 += value.length;
-      } else {
-        break;
+      const start = i2;
+      while (i2 < l && str.slice(i2, i2 + 2) !== '..') {
+        const code = str.codePointAt(i2)!;
+        if (!isWordChar(code)) break;
+        i2 += code > 0xFFFF ? 2 : 1;
       }
+      if (i2 === start) break;
+      result.push({ type: 'word', index: start, pos: [start, i2], value: str.slice(start, i2) });
     }
   }
 
@@ -621,6 +583,7 @@ export function parseTokens(tokens: Token[]): Token[] {
             result.push({
               ...subjectToken,
               type: 'pin',
+              pos: [subjectToken.pos[0], nextToken.pos[1]],
               value: [nextToken],
             });
             i += 2;
@@ -682,6 +645,7 @@ export function parseTokens(tokens: Token[]): Token[] {
             break;
         }
         break;
+      case 'incomplete:group':
       case 'group':
         result.push({
           ...subjectToken,
@@ -728,6 +692,7 @@ export function decodeTokenAsValue(tokens: Token[], i: number) {
         acc.push(subjectToken);
         i2 += 1;
         break;
+      case 'incomplete:group':
       case 'group': {
         const {
           tokens: newTokens,
@@ -768,6 +733,18 @@ export function decodeTokenAsValue(tokens: Token[], i: number) {
   };
 }
 
+function decodeComparison(tokens: Token[], i: number): DecodeTokenResult {
+  const parent = tokens[i];
+  const decoded = decodeTokenAsValue(tokens, i + 1);
+  const value = decoded.tokens[0] || null;
+  return {
+    i2: decoded.i2,
+    tokens: [{ type: 'cmp', index: parent.index,
+      pos: [parent.pos[0], value ? value.pos[1] : parent.pos[1]],
+      value: { op: String(parent.value), value } }],
+  };
+}
+
 export function decodeTokensAsValueList(tokens: Token[], i: number) {
   const result: Token[] = [];
   const l = tokens.length;
@@ -778,7 +755,9 @@ export function decodeTokensAsValueList(tokens: Token[], i: number) {
     const {
       i2: i3,
       tokens: valueTokens,
-    } = decodeTokenAsValue(tokens, i2);
+    } = tokens[i2].type === 'cmp_op'
+      ? decodeComparison(tokens, i2)
+      : decodeTokenAsValue(tokens, i2);
     i2 = i3;
 
     if (valueTokens.length > 0) {
@@ -879,19 +858,9 @@ function decodeTokenOther(tokens: Token[], i: number): DecodeTokenOtherResult {
           } = decodeTokenAsValue(tokens, i2);
           i2 = i4;
           // eslint-disable-next-line
-          e = rightValueTokens[0];
+          e = rightValueTokens[0] || makeInfinityToken();
         }
-        const pos: number[] = [];
-        if (valueToken) {
-          pos.push(valueToken.pos[0]);
-        } else {
-          pos.push(-1);
-        }
-        if (e) {
-          pos.push(e.pos[1]);
-        } else {
-          pos.push(-1);
-        }
+        const pos = [valueToken.pos[0], tokens[i2 - 1].pos[1]];
 
         return {
           isLast: false,
@@ -915,19 +884,7 @@ function decodeTokenOther(tokens: Token[], i: number): DecodeTokenOtherResult {
           tokens: listTokens,
         } = decodeTokensAsValueList(tokens, i);
         i2 = i4;
-        const pos: number[] = [];
-        const first = listTokens[0];
-        const last = listTokens.length > 0 ? listTokens[listTokens.length - 1] : null;
-        if (first) {
-          pos.push(first.pos[0]);
-        } else {
-          pos.push(-1);
-        }
-        if (last) {
-          pos.push(last.pos[1]);
-        } else {
-          pos.push(-1);
-        }
+        const pos = [tokens[i].pos[0], tokens[i2 - 1].pos[1]];
         return {
           isLast: false,
           i2,
@@ -1006,26 +963,13 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
       };
     }
     case 'cmp_op': {
-      // Comparison operators appear before a 'value' token
-      const {
-        i2,
-        tokens: valueTokens,
-      } = decodeTokenAsValue(tokens, i + 1);
-
-      const value = valueTokens[0];
+      const decoded = decodeComparison(tokens, i);
+      if (tokens[decoded.i2]?.type !== 'continuation_op') return decoded;
+      const list = decodeTokensAsValueList(tokens, i);
       return {
-        i2,
-        tokens: [
-          {
-            type: 'cmp',
-            index: subjectToken.index,
-            pos: [subjectToken.pos[0], value ? value.pos[1] : -1],
-            value: {
-              op: subjectToken.value,
-              value,
-            } as CmpValue,
-          },
-        ],
+        i2: list.i2,
+        tokens: [{ type: 'list', index: subjectToken.index,
+          pos: [subjectToken.pos[0], tokens[list.i2 - 1].pos[1]], value: list.tokens }],
       };
     }
     case 'range_op': {
@@ -1036,14 +980,14 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
         } = decodeTokenAsValue(tokens, i + 1);
 
         const s = makeInfinityToken();
-        const e = valueTokens[0];
+        const e = valueTokens[0] || makeInfinityToken();
         return {
           i2,
           tokens: [
             {
               type: 'range',
               index: subjectToken.index,
-              pos: [subjectToken.pos[0], e ? e.pos[1] : -1],
+              pos: [subjectToken.pos[0], tokens[i2 - 1].pos[1]],
               value: {
                 s,
                 e,
@@ -1060,7 +1004,7 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
           {
             type: 'range',
             index: subjectToken.index,
-            pos: [subjectToken.index, subjectToken.index + 1],
+            pos: [...subjectToken.pos],
             value: {
               s: makeInfinityToken(),
               e: makeInfinityToken(),
@@ -1084,15 +1028,13 @@ export function decodeToken(tokens: Token[], i: number): DecodeTokenResult {
         tokens: listTokens,
       } = decodeTokensAsValueList(tokens, i);
 
-      const first = listTokens[0];
-      const last = listTokens.length > 0 ? listTokens[listTokens.length - 1] : null;
       return {
         i2,
         tokens: [
           {
             index: subjectToken.index,
             type: 'list',
-            pos: [first ? first.pos[0] : -1, last ? last.pos[1] : -1],
+            pos: [subjectToken.pos[0], tokens[i2 - 1].pos[1]],
             value: listTokens,
           },
         ],
@@ -1121,7 +1063,7 @@ export function decodeTokens(tokens: Token[]) {
         tokens: newTokens,
       } = decodeToken(tokens, i2);
 
-      if (newTokens.length > 0) {
+      if (newTokens.length > 0 && i3 > i2) {
         newTokens.forEach((newToken) => {
           result.push(newToken);
         });

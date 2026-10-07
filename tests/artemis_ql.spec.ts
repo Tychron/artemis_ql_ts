@@ -253,7 +253,8 @@ describe('artemis_ql decode/parse', () => {
     expect(parsed.value).toHaveLength(1);
     expect(parsed.value[0]).toMatchObject({
       type: 'incomplete:quoted_string',
-      value: 'fooxbar',
+      value: 'foo\\xbar',
+      isError: true,
     });
   });
 
